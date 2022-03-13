@@ -128,7 +128,7 @@ def main() -> int:
             response.raise_for_status()
 
         delta = perf_counter() - start
-        print(f'Start sidan tog {round(delta, 2)} s')
+        print(f'Startsidan tog {round(delta, 2)} s')
 
         do_post(
             client,
