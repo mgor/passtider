@@ -1,6 +1,6 @@
 import sys
 
-from passtider import main, parse_available_times
+from passtider import main
 
 if __name__ == '__main__':
     sys.exit(main())

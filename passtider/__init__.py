@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List
 from time import perf_counter
 from datetime import datetime
 from os import remove
@@ -9,7 +9,35 @@ from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 
 
-def parse_available_times(result: str, start: float | None = None) -> None:
+def human_readable(delta: relativedelta) -> List[str]:
+    attrs = ['years', 'months', 'days']
+    attrs_sv = {
+        'years': 'år',
+        'year': 'år',
+        'months': 'månader',
+        'month': 'månad',
+        'days': 'dagar',
+        'day': 'dag',
+    }
+
+    result: List[str] = []
+
+    for attr in attrs:
+        value = getattr(delta, attr)
+        if not value:
+            continue
+
+        word = attr if value > 1 else attr[:-1]
+        word_sv = attrs_sv.get(word)
+
+        result.append(f'{value} {word_sv}')
+
+    return result
+
+
+def parse_available_times(
+    region: str, result: str, start: float | None = None,
+) -> None:
     if start is None:
         start = perf_counter()
 
@@ -17,18 +45,13 @@ def parse_available_times(result: str, start: float | None = None) -> None:
 
     tables = soup.select('table.timetable')
 
-    total_available = 0
-    total_places = len(tables)
-    first_available: datetime | None = None
-    first_place: str = ''
+    total = dict(available=0, places=len(tables))
+    first = dict(available=None, place=None)
 
-    if total_places > 0:
+    if total['places'] > 0:
         print(f'{"stad":12} | {"antal":>5} | {"första":16}')
-        print('{}+{}+{}'.format(
-            '-' * 13,
-            '-' * 7,
-            '-' * 17,
-        ))
+        print(f'{"-"*13}+{"-"*7}+{"-"*17}')
+
         for table in tables:
             place = table.select_one('thead tr th strong#sectionName').text
             time_slots = [
@@ -39,53 +62,53 @@ def parse_available_times(result: str, start: float | None = None) -> None:
                 )
             ]
             available = len(time_slots)
-            total_available += available
-            if available > 0:
-                first = time_slots[0][:-3]
-                first_date = datetime.strptime(first, '%Y-%m-%d %H:%M')
+            if available < 1:
+                continue
 
-                if first_available is None or first_date < first_available:
-                    first_available = first_date
-                    first_place = place
-            else:
-                first = ' '
+            total['available'] += available
+            first_raw = time_slots[0][:-3]
+            first_date = datetime.strptime(
+                first_raw,
+                '%Y-%m-%d %H:%M',
+            )
 
-            print(f'{place:12} | {available:>5} | {first:16}')
+            if (
+                first['available'] is None or
+                first_date < first['available']
+            ):
+                first = dict(available=first_date, place=place)
+
+            print(f'{place:12} | {available:>5} | {first_raw:16}')
     else:
-        print('inga lediga tider hittades!')
+        print(f'inga lediga tider hittades i {region}!')
 
     delta = perf_counter() - start
 
     print(
-        f'det tog totalt {round(delta, 2)} sekunder att hitta '
-        f'{total_available} lediga tider '
-        f'på {total_places} kontor'
+        f'\ndet tog totalt {round(delta, 2)} sekunder att hitta '
+        f'{total["available"]} lediga tider '
+        f'på {total["places"]} kontor i {region} län'
     )
 
-    if first_available is not None:
-        attrs = ['years', 'months', 'days']
-        attrs_sv = {
-            'years': 'år',
-            'year': 'år',
-            'months': 'månader',
-            'month': 'månad',
-            'days': 'dagar',
-            'day': 'dag',
-        }
-        human_readable = lambda delta: ['%d %s' % (getattr(delta, attr), attrs_sv.get(attr if getattr(delta, attr) > 1 else attr[:-1])) for attr in attrs if getattr(delta, attr)]
-        until = human_readable(relativedelta(first_available, datetime.now()))
+    if first['available'] is not None:
+        until = human_readable(
+            relativedelta(first['available'], datetime.now()),
+        )
         until_text = ', '.join(until[:-1])
         until_text += f' och {until[-1]}'
-        print(f'tidigast lediga tiden är om {until_text} i {first_place}')
+        print(f'tidigast lediga tiden är om {until_text} i {first["place"]}')
+
+    print('')
 
 
 def do_post(
-    session: requests.Session, data: Dict[str, str], label: str | None = None,
+    region: str,
+    session: requests.Session,
+    data: Dict[str, str],
+    label: str | None = None,
 ) -> str:
-    start = perf_counter()
-
     response = session.post(
-        'https://bokapass.nemoq.se/Booking/Booking/Next/vasternorrland',
+        f'https://bokapass.nemoq.se/Booking/Booking/Next/{region}',
         data=data,
     )
 
@@ -108,9 +131,6 @@ def do_post(
             f'"{label}" failed: {errors}',
         )
 
-    delta = perf_counter() - start
-    print(f'steg "{label}" tog {round(delta, 2)} sekunder')
-
     return response.text
 
 
@@ -120,79 +140,94 @@ def main() -> int:
     except OSError:
         pass
 
-    with requests.Session() as client:
-        start = perf_counter()
-        response = client.get('https://bokapass.nemoq.se/Booking/Booking/Index/vasternorrland')
+    regions: Dict[str, str] = {
+        'vasternorrland': '14',
+        'gavleborg': '19',
+        'jamtland': '18',
+    }
 
-        if response.status_code != 200:
-            response.raise_for_status()
+    start = perf_counter()
 
-        delta = perf_counter() - start
-        print(f'Startsidan tog {round(delta, 2)} s')
+    for region, service_group_id in regions.items():
+        try:
+            with requests.Session() as client:
+                start_region = perf_counter()
+                response = client.get(
+                    f'https://bokapass.nemoq.se/Booking/Booking/Index/{region}',
+                )
 
-        do_post(
-            client,
-            data={
-                'FormId': '1',
-                'ServiceGroupId': '14',
-                'StartNextButton': 'Boka ny tid',
-            },
-            label='Boka ny tid',
-        )
+                if response.status_code != 200:
+                    response.raise_for_status()
 
-        do_post(
-            client,
-            data={
-                'AgreementText': (
-                    'För att kunna genomföra tidsbokning för ansökan om pass '
-                    'och/eller id-kort krävs att dina personuppgifter '
-                    'behandlas. Det är nödvändigt för att Polismyndigheten '
-                    'ska kunna utföra de uppgifter som följer av '
-                    'passförordningen (1979:664) och förordningen (2006:661) '
-                    'om nationellt identitetskort och som ett led i '
-                    'myndighetsutövning. För att åtgärda eventuellt '
-                    'uppkomna fel kan också systemleverantören komma att nås '
-                    'av personuppgifterna. Samtliga uppgifter raderas ur '
-                    'tidsbokningssystemet dagen efter besöket.'
-                ),
-                'AcceptInformationStorage': ['true', 'false'],
-                'NumberOfPeople': '1',
-                'Next': 'Nästa',
-            },
-            label='Godkänn villkor',
-        )
+                do_post(
+                    region,
+                    client,
+                    data={
+                        'FormId': '1',
+                        'ServiceGroupId': service_group_id,
+                        'StartNextButton': 'Boka ny tid',
+                    },
+                    label='Boka ny tid',
+                )
 
-        do_post(
-            client,
-            data={
-                'ServiceCategoryCustomers[0].CustomerIndex': '0',
-                'ServiceCategoryCustomers[0].ServiceCategoryId': '2',
-                'Next': 'Nästa',
-            },
-            label='Bor i Sverige',
-        )
+                do_post(
+                    region,
+                    client,
+                    data={
+                        'AgreementText': (
+                            'För att kunna genomföra tidsbokning för ansökan om '
+                            'pass och/eller id-kort krävs att dina '
+                            'personuppgifter behandlas. Det är nödvändigt för '
+                            'att Polismyndigheten ska kunna utföra de uppgifter '
+                            'som följer av passförordningen (1979:664) och '
+                            'förordningen (2006:661) om nationellt identitetskort '
+                            'och som ett led i myndighetsutövning. För att '
+                            'åtgärda eventuellt uppkomna fel kan också '
+                            'systemleverantören komma att nås av '
+                            'personuppgifterna. Samtliga uppgifter raderas ur '
+                            'tidsbokningssystemet dagen efter besöket.'
+                        ),
+                        'AcceptInformationStorage': ['true', 'false'],
+                        'NumberOfPeople': '1',
+                        'Next': 'Nästa',
+                    },
+                    label='Godkänn villkor',
+                )
 
-        now = datetime.now()
+                do_post(
+                    region,
+                    client,
+                    data={
+                        'ServiceCategoryCustomers[0].CustomerIndex': '0',
+                        'ServiceCategoryCustomers[0].ServiceCategoryId': '2',
+                        'Next': 'Nästa',
+                    },
+                    label='Bor i Sverige',
+                )
 
-        result = do_post(
-            client,
-            data={
-                'FormId': '1',
-                'NumberOfPeople': '1',
-                'RegionId': '0',
-                'SectionId': '0',
-                'NQServiceTypeId': '1',
-                'FromDateString': now.strftime('%Y-%m-%d'),
-                'SearchTimeHour': '8',
-                'TimeSearchFirstAvailableButton': 'Första lediga tid',
-            },
-            label='Första lediga tid',
-        )
+                now = datetime.now()
 
-        with open('result.html', 'w+', encoding='utf-8') as fd:
-            fd.write(result)
+                result = do_post(
+                    region,
+                    client,
+                    data={
+                        'FormId': '1',
+                        'NumberOfPeople': '1',
+                        'RegionId': '0',
+                        'SectionId': '0',
+                        'NQServiceTypeId': '1',
+                        'FromDateString': now.strftime('%Y-%m-%d'),
+                        'SearchTimeHour': '8',
+                        'TimeSearchFirstAvailableButton': 'Första lediga tid',
+                    },
+                    label='Första lediga tid',
+                )
 
-        parse_available_times(result, start)
+                parse_available_times(region, result, start_region)
+        except requests.exceptions.HTTPError as e:
+            print(f'gick inte att hämta lediga tider i {region}: {str(e)}', end='\n\n')
 
+    delta = perf_counter() - start
+    print(f'\ndet tog totalt {round(delta, 2)} sekunder att leta tider i {len(regions.keys())} län')
 
     return 0

@@ -1,5 +1,7 @@
-[tool.pylint.messages_control]
+[tool.pylint.MASTER]
 max-line-length = 120
 disable = [
-    "missing-module-docstring"
+    "missing-module-docstring",
+    "missing-function-docstring",
+    "invalid-name"
 ]

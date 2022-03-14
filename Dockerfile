@@ -2,6 +2,8 @@ FROM python:3.10-alpine
 
 LABEL org.opencontainers.image.source https://github.com/mgor/passtider
 
+LABEL org.opencontainers.image.description "find first available timeslot for [re]new passport"
+
 RUN mkdir -p /app/passtider
 
 COPY requirements.txt /tmp/
