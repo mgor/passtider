@@ -150,7 +150,7 @@ def do_post(
 
 
 def main() -> int:
-    eprint(':calendar: letar efter lediga tider, ha tålamod...', end='\n\n')
+    eprint('\n:calendar: letar efter lediga tider, ha tålamod...', end='\n\n')
 
     regions: Dict[str, str] = {
         'vasternorrland': '14',
