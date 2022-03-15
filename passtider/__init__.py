@@ -16,7 +16,7 @@ def eprint(text: str, end: Optional[str] = '\n') -> None:
 
 
 def human_readable(delta: relativedelta) -> List[str]:
-    attrs = ['years', 'months', 'days']
+    attrs = ['years', 'months', 'days', 'hours']
     attrs_sv = {
         'years': 'år',
         'year': 'år',
@@ -24,6 +24,8 @@ def human_readable(delta: relativedelta) -> List[str]:
         'month': 'månad',
         'days': 'dagar',
         'day': 'dag',
+        'hours': 'timmar',
+        'hour': 'timme',
     }
 
     result: List[str] = []
@@ -104,13 +106,15 @@ def parse_available_times(
             until_text = until[0]
 
         if getattr(diff, 'years', 0) > 0:
-            icon = ':angry_face:'
+            icon = ':face_with_symbols_on_mouth:'
         elif getattr(diff, 'months', 0) > 0:
             icon = ':weary_face:'
         elif getattr(diff, 'days', 0) > 25:
             icon = ':slightly_smiling_face:'
         elif getattr(diff, 'days', 0) > 15:
             icon = ':beaming_face_with_smiling_eyes:'
+        elif getattr(diff, 'hours', 0) > 0:
+            icon = ':face_screaming_in_fear:'
         else:
             icon = ':star-struck:'
 
