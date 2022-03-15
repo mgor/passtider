@@ -1,12 +1,18 @@
-from typing import Dict, List
+import re
+
+from typing import Dict, List, Optional
 from time import perf_counter
 from datetime import datetime
-from os import remove
 
 import requests
 
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
+from emoji import emojize
+
+
+def eprint(text: str, end: Optional[str] = '\n') -> None:
+    print(emojize(text), end=end)
 
 
 def human_readable(delta: relativedelta) -> List[str]:
@@ -80,23 +86,35 @@ def parse_available_times(
 
             print(f'{place:12} | {available:>5} | {first_raw:16}')
     else:
-        print(f'inga lediga tider hittades i {region}!')
+        eprint(f':cross_mark: inga lediga tider hittades i {region}!')
 
-    delta = perf_counter() - start
-
-    print(
-        f'\ndet tog totalt {round(delta, 2)} sekunder att hitta '
+    eprint(
+        f'\n:alarm_clock: det tog totalt {round((perf_counter() - start), 2)} sekunder att hitta '
         f'{total["available"]} lediga tider '
         f'på {total["places"]} kontor i {region} län'
     )
 
     if first['available'] is not None:
-        until = human_readable(
-            relativedelta(first['available'], datetime.now()),
-        )
-        until_text = ', '.join(until[:-1])
-        until_text += f' och {until[-1]}'
-        print(f'tidigast lediga tiden är om {until_text} i {first["place"]}')
+        diff = relativedelta(first['available'], datetime.now())
+        until = human_readable(diff)
+        if len(until) > 1:
+            until_text = ', '.join(until[:-1])
+            until_text += f' och {until[-1]}'
+        else:
+            until_text = until[0]
+
+        if getattr(diff, 'years', 0) > 0:
+            icon = ':angry_face:'
+        elif getattr(diff, 'months', 0) > 0:
+            icon = ':weary_face:'
+        elif getattr(diff, 'days', 0) > 25:
+            icon = ':slightly_smiling_face:'
+        elif getattr(diff, 'days', 0) > 15:
+            icon = ':beaming_face_with_smiling_eyes:'
+        else:
+            icon = ':star-struck:'
+
+        eprint(f'{icon} tidigast lediga tiden är om {until_text} i {first["place"]}')
 
     print('')
 
@@ -124,9 +142,6 @@ def do_post(
 
         errors = [tag.text for tag in validation_errors]
 
-        with open('error.html', 'w+', encoding='utf-8') as fd:
-            fd.write(response.text)
-
         raise requests.exceptions.HTTPError(
             f'"{label}" failed: {errors}',
         )
@@ -135,10 +150,7 @@ def do_post(
 
 
 def main() -> int:
-    try:
-        remove('errors.html')
-    except OSError:
-        pass
+    eprint(':calendar: letar efter lediga tider, ha tålamod...', end='\n\n')
 
     regions: Dict[str, str] = {
         'vasternorrland': '14',
@@ -225,9 +237,10 @@ def main() -> int:
 
                 parse_available_times(region, result, start_region)
         except requests.exceptions.HTTPError as e:
-            print(f'gick inte att hämta lediga tider i {region}: {str(e)}', end='\n\n')
+            message = re.sub(r' for url: .*', '', str(e))
+            eprint(f':cross_mark: det gick inte att hämta lediga tider i {region}: {message}', end='\n\n')
 
     delta = perf_counter() - start
-    print(f'\ndet tog totalt {round(delta, 2)} sekunder att leta tider i {len(regions.keys())} län')
+    eprint(f'\n:chequered_flag: det tog totalt {round(delta, 2)} sekunder att leta tider i {len(regions.keys())} län')
 
     return 0
