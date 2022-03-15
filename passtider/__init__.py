@@ -1,5 +1,4 @@
 import re
-import sys
 
 from typing import Dict, List, Optional
 from time import perf_counter
@@ -13,7 +12,7 @@ from emoji import emojize
 
 
 def eprint(text: str, end: Optional[str] = '\n') -> None:
-    print(emojize(text), end=end)
+    print(emojize(text), end=end, flush=True)
 
 
 def human_readable(delta: relativedelta) -> List[str]:
@@ -240,8 +239,6 @@ def main() -> int:
         except requests.exceptions.RequestException as e:
             message = re.sub(r' for url: .*', '', str(e))
             eprint(f':cross_mark: det gick inte att hämta lediga tider i {region}: {message}', end='\n\n')
-
-        sys.stdout.flush()
 
     delta = perf_counter() - start
     eprint(f'\n:chequered_flag: det tog totalt {round(delta, 2)} sekunder att leta tider i {len(regions.keys())} län')
